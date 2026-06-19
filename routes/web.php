@@ -291,6 +291,11 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/api/email/settings', [EmailController::class, 'getSettings']);
     Route::post('/api/email/settings', [EmailController::class, 'updateSettings']);
 
+    // Email Accounts Administrative endpoints
+    Route::get('/api/email-accounts', [EmailController::class, 'getEmailAccounts']);
+    Route::post('/api/email-accounts/store', [EmailController::class, 'storeEmailAccount']);
+    Route::delete('/api/email-accounts/delete/{id}', [EmailController::class, 'deleteEmailAccount']);
+
     // Dynamic Report Builder routes
     Route::get('/reports', [ReportController::class, 'index']);
     Route::get('/api/reports/columns/{table}', [ReportController::class, 'getColumns']);
@@ -300,6 +305,7 @@ Route::middleware(['auth'])->group(function () {
 
     // Internal Chat system routes
     Route::get('/api/chat/context', [ChatController::class, 'getChannelsAndContacts']);
+    Route::get('/api/chat/users/search', [ChatController::class, 'searchUsers']);
     Route::get('/api/chat/messages', [ChatController::class, 'getMessages']);
     Route::post('/api/chat/send', [ChatController::class, 'sendMessage']);
     Route::delete('/api/chat/delete/{id}', [ChatController::class, 'deleteMessage']);

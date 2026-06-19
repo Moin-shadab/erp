@@ -204,7 +204,20 @@ class ImapSocketClient extends SocketClient
                 $remain = $bytes;
                 while ($remain > 0) {
                     $chunk = @fread($this->socket, min($remain, 8192));
-                    if ($chunk === false || $chunk === '') break;
+                    if ($chunk === false) {
+                        break;
+                    }
+                    if ($chunk === '') {
+                        if (feof($this->socket)) {
+                            break;
+                        }
+                        $meta = stream_get_meta_data($this->socket);
+                        if ($meta['timed_out']) {
+                            break;
+                        }
+                        usleep(10000); // 10ms wait for network packets
+                        continue;
+                    }
                     $data .= $chunk;
                     $remain -= strlen($chunk);
                 }

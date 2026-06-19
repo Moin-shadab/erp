@@ -40,29 +40,19 @@ class MimeParser
         $cs = self::$CS_ALIASES[$cs] ?? $cs;
 
         if ($cs === 'UTF-8' || $cs === '') {
-            if (mb_check_encoding($text, 'UTF-8')) return $text;
-            
-            $detected = mb_detect_encoding($text, [
-                'UTF-8','ISO-8859-1','Windows-1252','Windows-1251','ISO-8859-2',
-                'KOI8-R','Shift_JIS','EUC-JP','GB2312','GBK','Big5','EUC-KR',
-                'ISO-2022-JP','TIS-620','Windows-1256','ISO-8859-6',
-            ], true);
-            if ($detected && $detected !== 'UTF-8') {
-                return mb_convert_encoding($text, 'UTF-8', $detected);
+            // Strip BOM if present
+            if (substr($text, 0, 3) === "\xEF\xBB\xBF") {
+                $text = substr($text, 3);
             }
-            return mb_convert_encoding($text, 'UTF-8', 'ISO-8859-1');
-        }
-
-        // Strip BOM if present
-        if ($cs === 'UTF-8' && substr($text, 0, 3) === "\xEF\xBB\xBF") {
-            $text = substr($text, 3);
+            return mb_convert_encoding($text, 'UTF-8', 'UTF-8');
         }
 
         $result = @iconv($cs, 'UTF-8//TRANSLIT//IGNORE', $text);
         if ($result === false || $result === '') {
             $result = @mb_convert_encoding($text, 'UTF-8', $cs);
         }
-        return $result ?: $text;
+        $utf8Str = $result ?: $text;
+        return mb_convert_encoding($utf8Str, 'UTF-8', 'UTF-8');
     }
 
     /**
@@ -94,9 +84,9 @@ class MimeParser
                 $enc = mb_detect_encoding($s, ['UTF-8','ISO-8859-1','Windows-1252','KOI8-R'], true);
                 if ($enc) $s = mb_convert_encoding($s, 'UTF-8', $enc);
             }
-            return $s;
+            return mb_convert_encoding($s, 'UTF-8', 'UTF-8');
         }
-        return $out;
+        return mb_convert_encoding($out, 'UTF-8', 'UTF-8');
     }
 
     /**

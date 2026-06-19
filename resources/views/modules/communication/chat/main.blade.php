@@ -4,7 +4,7 @@
         <!-- 1. Left Sidebar: Channels & DMs -->
         <div class="chat-sidebar">
             <div class="chat-sidebar-header">
-                <h5 style="color:black;"><i class="bi bi-chat-left-dots-fill me-2 text-warning"></i>Internal Chat</h5>
+                <h5><i class="bi bi-chat-left-dots-fill me-2 text-warning"></i>Internal Chat</h5>
                 <span id="current-user-badge" class="badge bg-light text-dark small" style="font-size: 0.75rem;"></span>
             </div>
             
@@ -14,7 +14,7 @@
                     <ul class="sidebar-list">
                         <li>
                             <a href="#" class="sidebar-item-link text-warning fw-bold" onclick="toggleAdminPanel(event, true)" id="admin-panel-toggle">
-                                <span class="sidebar-item-icon"><i class="bi bi-shield-lock-fill" style="color:black;"></i></span>
+                                <span class="sidebar-item-icon"><i class="bi bi-shield-lock-fill text-danger"></i></span>
                                 Admin Console
                             </a>
                         </li>
@@ -24,22 +24,25 @@
                 <!-- Channels / Groups -->
                 <div class="sidebar-section">
                     <div class="sidebar-section-header">
-                        <span style="color:black;" >Channels</span>
+                        <span>Channels</span>
                         <button class="add-btn" onclick="openCreateChannelModal()" title="Create Channel">
                             <i class="bi bi-plus-lg"></i>
                         </button>
                     </div>
-                    <ul class="sidebar-list" id="sidebar-channels-list" style="color:black;">
+                    <ul class="sidebar-list" id="sidebar-channels-list">
                         <!-- Filled dynamically by JS -->
                     </ul>
                 </div>
 
                 <!-- Direct Messages (DMs) -->
-                <div class="sidebar-section" style="color:black;">
+                <div class="sidebar-section">
                     <div class="sidebar-section-header">
-                        <span style="color:black;" >Direct Messages</span>
+                        <span>Direct Messages</span>
+                        <button class="add-btn" onclick="openNewDmModal()" title="Start Chat">
+                            <i class="bi bi-plus-lg"></i>
+                        </button>
                     </div>
-                    <ul class="sidebar-list" id="sidebar-contacts-list" style="color:black;">
+                    <ul class="sidebar-list" id="sidebar-contacts-list">
                         <!-- Filled dynamically by JS -->
                     </ul>
                 </div>
@@ -300,6 +303,33 @@
                     <button type="submit" class="btn btn-primary btn-sm px-3">Forward</button>
                 </div>
             </form>
+        </div>
+    </div>
+</div>
+
+<!-- 7. Start Direct Message Modal -->
+<div class="modal fade slack-modal" id="newDmModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold"><i class="bi bi-chat-dots-fill text-muted me-2"></i>Start Direct Message</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label for="dm-user-search" class="slack-form-label">Search User by Name or Email</label>
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text bg-white"><i class="bi bi-search text-muted"></i></span>
+                        <input type="text" class="form-control slack-form-control text-dark" id="dm-user-search" placeholder="Type user name or email..." autocomplete="off" oninput="searchDmUsers(this.value)">
+                    </div>
+                </div>
+                <div class="list-group overflow-y-auto" style="max-height: 250px; border: 1px solid #e2e8f0; border-radius: 6px;" id="dm-users-search-results">
+                    <div class="text-muted text-center py-3 small">Start typing to search active users...</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-light btn-sm px-3" data-bs-dismiss="modal">Cancel</button>
+            </div>
         </div>
     </div>
 </div>

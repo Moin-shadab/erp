@@ -80,6 +80,17 @@ class ChatController extends Controller
                     ->pluck('id')->toArray();
                 $allowedUserIds = array_merge($allowedUserIds, $superAdmins);
             }
+            // F. Active DM conversation partners
+            $activeDmPartners = DB::table('chat_messages')
+                ->where(function($q) use ($user) {
+                    $q->where('sender_id', $user->id)
+                      ->whereNotNull('recipient_id');
+                })
+                ->orWhere('recipient_id', $user->id)
+                ->select(DB::raw('distinct case when sender_id = ' . $user->id . ' then recipient_id else sender_id end as user_id'))
+                ->pluck('user_id')
+                ->toArray();
+            $allowedUserIds = array_merge($allowedUserIds, $activeDmPartners);
         }
 
         $allowedUserIds = array_unique(array_filter($allowedUserIds));
@@ -379,6 +390,25 @@ class ChatController extends Controller
             return response()->json(['error' => 'Message not found.'], 404);
         }
 
+        // Security check: ensure user has access to the original message they want to forward
+        if ($original->group_id) {
+            $role = DB::table('roles')->where('id', $user->role_id)->first();
+            $isSuperAdmin = $role && $role->slug === 'super-admin';
+            if (!$isSuperAdmin) {
+                $hasAccess = DB::table('chat_group_users')
+                    ->where('group_id', $original->group_id)
+                    ->where('user_id', $user->id)
+                    ->exists();
+                if (!$hasAccess) {
+                    return response()->json(['error' => 'Access Denied to source message'], 403);
+                }
+            }
+        } elseif ($original->recipient_id) {
+            if ($original->sender_id != $user->id && $original->recipient_id != $user->id) {
+                return response()->json(['error' => 'Access Denied to source message'], 403);
+            }
+        }
+
         // Insert forwarded message reference
         $newMessageId = DB::table('chat_messages')->insertGetId([
             'sender_id' => $user->id,
@@ -435,6 +465,25 @@ class ChatController extends Controller
             return response()->json(['error' => 'Parent thread not found.'], 404);
         }
 
+        // Security check: ensure user has access to the parent message thread
+        if ($parent->group_id) {
+            $role = DB::table('roles')->where('id', $user->role_id)->first();
+            $isSuperAdmin = $role && $role->slug === 'super-admin';
+            if (!$isSuperAdmin) {
+                $hasAccess = DB::table('chat_group_users')
+                    ->where('group_id', $parent->group_id)
+                    ->where('user_id', $user->id)
+                    ->exists();
+                if (!$hasAccess) {
+                    return response()->json(['error' => 'Access Denied'], 403);
+                }
+            }
+        } elseif ($parent->recipient_id) {
+            if ($parent->sender_id != $user->id && $parent->recipient_id != $user->id) {
+                return response()->json(['error' => 'Access Denied'], 403);
+            }
+        }
+
         if ($parent->deleted_at) {
             $parent->message = 'This message was deleted.';
             $parent->attachments = [];
@@ -478,6 +527,37 @@ class ChatController extends Controller
     | Admin Console Endpoint Handlers
     |--------------------------------------------------------------------------
     */
+
+    /**
+     * Search active system users.
+     */
+    public function searchUsers(Request $request)
+    {
+        $user = Auth::user();
+        if (!$user) {
+            return response()->json(['error' => 'Unauthenticated'], 401);
+        }
+
+        $query = $request->query('q', '');
+        $cleanQuery = trim($query);
+
+        if (empty($cleanQuery)) {
+            return response()->json([]);
+        }
+
+        $users = DB::table('users')
+            ->where('is_active', true)
+            ->where('id', '<>', $user->id)
+            ->where(function($q) use ($cleanQuery) {
+                $q->where('name', 'like', '%' . $cleanQuery . '%')
+                  ->orWhere('email', 'like', '%' . $cleanQuery . '%');
+            })
+            ->select('id', 'name', 'email')
+            ->limit(50)
+            ->get();
+
+        return response()->json($users);
+    }
 
     /**
      * Create a new group channel.

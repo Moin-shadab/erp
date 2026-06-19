@@ -222,4 +222,36 @@
             </form>
         </div>
     </div>
-</div> 
+</div>
+
+<!-- Connection / Sync Logs Modal -->
+<div class="modal fade" id="syncLogsModal" tabindex="-1" aria-labelledby="syncLogsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content border-0 shadow-lg" style="border-radius: 12px; overflow: hidden; background: #ffffff;">
+            <div class="modal-header border-bottom px-4 py-3 d-flex justify-content-between align-items-center">
+                <h5 class="modal-title fw-bold text-dark d-flex align-items-center gap-2" id="syncLogsModalLabel">
+                    <i class="bi bi-exclamation-triangle-fill text-danger"></i> Connection / Sync Failed
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body px-4 py-3">
+                <div class="alert alert-danger d-flex align-items-center gap-2 py-2 px-3 mb-3 small" role="alert">
+                    <i class="bi bi-x-circle-fill"></i>
+                    <span id="sync-error-message">Failed to sync email account.</span>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small fw-bold text-muted mb-1">IMAP Session Connection Logs</label>
+                    <div class="bg-dark text-light p-3 rounded font-monospace small overflow-auto" id="sync-logs-container" style="max-height: 300px; white-space: pre-wrap; font-family: SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size: 0.8rem; line-height: 1.4;">
+                        <!-- Logs populated dynamically -->
+                    </div>
+                </div>
+                <div class="text-muted small" style="font-size: 0.75rem;">
+                    <i class="bi bi-info-circle me-1"></i> For Google/Gmail accounts, verify that 2-Step Verification is enabled and you are using a 16-character <strong>App Password</strong> instead of your personal password.
+                </div>
+            </div>
+            <div class="modal-footer border-top px-4 py-2">
+                <button type="button" class="btn btn-sm btn-secondary px-3" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>

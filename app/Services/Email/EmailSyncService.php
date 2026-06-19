@@ -52,8 +52,12 @@ class EmailSyncService
             );
 
             if (!$imap->login()) {
-                Log::warning("Socket connection failed for {$account->email}. Falling back to simulation mode.");
-                return $this->runSimulation($account, "Connection failed. Simulator activated.");
+                Log::warning("Socket connection failed for {$account->email}.");
+                return [
+                    'success' => false,
+                    'message' => 'IMAP login failed. Please verify your email credentials or app password.',
+                    'logs' => $imap->getLogs()
+                ];
             }
 
             $select = $imap->selectFolder('INBOX');
@@ -174,7 +178,11 @@ class EmailSyncService
 
         } catch (\Exception $e) {
             Log::error("IMAP sync error: " . $e->getMessage());
-            return $this->runSimulation($account, "Sync failed: " . $e->getMessage() . ". Simulator activated.");
+            return [
+                'success' => false,
+                'message' => 'IMAP sync failed: ' . $e->getMessage(),
+                'logs' => isset($imap) ? $imap->getLogs() : [$e->getMessage()]
+            ];
         }
     }
 
@@ -373,9 +381,25 @@ class EmailSyncService
                 continue;
             }
 
-            // Save to storage
-            $storagePath = 'email_attachments/' . $account->id . '/' . uniqid() . '_' . $fileName;
-            Storage::put($storagePath, $fileContent);
+            // Save to storage systematically by date and message ID with deduplication check
+            $cleanMsgId = trim($messageId, ' <>');
+            $cleanMsgId = preg_replace('/[^a-zA-Z0-9_\-\.@]/', '_', $cleanMsgId);
+
+            $ts = strtotime($dateSent);
+            $year = $ts ? date('Y', $ts) : date('Y');
+            $month = $ts ? date('m', $ts) : date('m');
+            $day = $ts ? date('d', $ts) : date('d');
+
+            $safeFileName = basename($fileName);
+            if (empty($safeFileName)) {
+                $safeFileName = 'attachment_' . uniqid();
+            }
+
+            $storagePath = "email_attachments/{$year}/{$month}/{$day}/{$cleanMsgId}/{$safeFileName}";
+
+            if (!Storage::exists($storagePath)) {
+                Storage::put($storagePath, $fileContent);
+            }
 
             $attId = DB::table('email_attachments')->insertGetId([
                 'email_id' => $emailId,

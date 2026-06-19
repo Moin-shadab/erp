@@ -357,6 +357,28 @@ function refreshActiveAccountEmails(btn) {
                 });
         } else {
             showToast('error', data.message || 'Sync failed.');
+            
+            // Populate and show the sync logs modal
+            const errorMsgEl = document.getElementById('sync-error-message');
+            const logsContainer = document.getElementById('sync-logs-container');
+            const modalEl = document.getElementById('syncLogsModal');
+            
+            if (errorMsgEl) {
+                errorMsgEl.textContent = data.message || 'Failed to sync email account.';
+            }
+            if (logsContainer) {
+                if (data.logs && Array.isArray(data.logs) && data.logs.length > 0) {
+                    logsContainer.textContent = data.logs.join('\n');
+                } else {
+                    logsContainer.textContent = 'No session connection logs captured.';
+                }
+            }
+            if (modalEl) {
+                // Move to body to prevent truncation/z-index issues
+                document.body.appendChild(modalEl);
+                const modal = new bootstrap.Modal(modalEl);
+                modal.show();
+            }
         }
     })
     .catch(err => {

@@ -1062,6 +1062,74 @@ function toggleDeletePermissionCheckbox(userId, canDelete) {
     });
 }
 
+// Direct Message Search & Launch Dialog
+function openNewDmModal() {
+    document.getElementById('dm-user-search').value = '';
+    document.getElementById('dm-users-search-results').innerHTML = '<div class="text-muted text-center py-3 small">Start typing to search active users...</div>';
+    const modal = new bootstrap.Modal(document.getElementById('newDmModal'));
+    modal.show();
+}
+
+function searchDmUsers(query) {
+    const resultsContainer = document.getElementById('dm-users-search-results');
+    if (!resultsContainer) return;
+
+    const cleanQuery = query.trim();
+    if (cleanQuery.length === 0) {
+        resultsContainer.innerHTML = '<div class="text-muted text-center py-3 small">Start typing to search active users...</div>';
+        return;
+    }
+
+    fetch('/api/chat/users/search?q=' + encodeURIComponent(cleanQuery), { headers: getHeaders() })
+        .then(res => res.json())
+        .then(users => {
+            resultsContainer.innerHTML = '';
+            if (users.length === 0) {
+                resultsContainer.innerHTML = '<div class="text-muted text-center py-3 small">No matching active users found</div>';
+                return;
+            }
+
+            users.forEach(u => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'list-group-item list-group-item-action d-flex align-items-center justify-content-between py-2';
+                btn.innerHTML = `
+                    <div>
+                        <div class="fw-semibold text-dark">${u.name}</div>
+                        <div class="text-muted text-xs">${u.email}</div>
+                    </div>
+                    <i class="bi bi-chevron-right text-secondary"></i>
+                `;
+                btn.onclick = () => startDirectMessageChat(u);
+                resultsContainer.appendChild(btn);
+            });
+        })
+        .catch(err => {
+            console.error('Failed to search users', err);
+            resultsContainer.innerHTML = '<div class="text-danger text-center py-3 small">Error searching users</div>';
+        });
+}
+
+function startDirectMessageChat(user) {
+    const modalEl = document.getElementById('newDmModal');
+    const modal = bootstrap.Modal.getInstance(modalEl);
+    if (modal) modal.hide();
+
+    let exists = contactsList.find(c => c.id == user.id);
+    if (!exists) {
+        contactsList.push({
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            role_name: 'Staff',
+            department_name: 'No Dept'
+        });
+        renderSidebar();
+    }
+
+    selectChat(null, 'direct', user.id, '@ ' + user.name);
+}
+
 // Bind to window for HTML click callbacks
 window.openCreateChannelModal = openCreateChannelModal;
 window.submitCreateChannel = submitCreateChannel;
@@ -1083,6 +1151,9 @@ window.submitCommunicationRule = submitCommunicationRule;
 window.deleteCommunicationRule = deleteCommunicationRule;
 window.toggleDeletePermissionCheckbox = toggleDeletePermissionCheckbox;
 window.selectChat = selectChat;
+window.openNewDmModal = openNewDmModal;
+window.searchDmUsers = searchDmUsers;
+window.startDirectMessageChat = startDirectMessageChat;
 
 // Run initial boot
 initializeChat();

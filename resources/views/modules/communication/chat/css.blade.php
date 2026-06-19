@@ -1,19 +1,20 @@
 {{-- Internal Chat Custom CSS --}}
 <style>
     :root {
-        --slack-aubergine: #1e1b4b; /* Deep Indigo Dark Sidebar */
-        --slack-aubergine-hover: #312e81; /* Medium Indigo Hover */
-        --slack-sidebar-text: #cbd5e1; /* Light Slate text for contrast */
-        --slack-sidebar-active: #4f46e5; /* Electric Indigo Active */
+        --slack-sidebar-gradient: linear-gradient(135deg, #f5f3ff 0%, #e0e7ff 100%);
+        --slack-sidebar-hover-bg: #c7d2fe;
+        --slack-sidebar-text: #3730a3;
+        --slack-sidebar-active-bg: #a5b4fc;
+        --slack-sidebar-active-text: #1e1b4b;
         --slack-border: #cbd5e1;
-        --slack-active-green: #22c55e; /* Vibrant Green */
+        --slack-active-green: #16a34a; /* Vibrant Darker Green */
         
         /* High Contrast Main Theme colors */
-        --chat-bg-main: #f1f5f9; /* Slate Light Gray Main Chat background */
+        --chat-bg-main: #f8fafc; /* Slate Light Gray Main Chat background */
         --chat-bg-bubble: #ffffff; /* White Message Bubbles */
         --chat-text-main: #0f172a; /* Very Dark Slate Main text */
-        --chat-text-muted: #475569; /* Medium Slate Muted text */
-        --chat-text-light: #64748b; /* Muted Slate info text */
+        --chat-text-muted: #1e293b; /* Medium Slate Muted text */
+        --chat-text-light: #475569; /* Muted Slate info text */
     }
 
     .chat-container {
@@ -30,17 +31,17 @@
     /* Left Sidebar */
     .chat-sidebar {
         width: 260px;
-        background-color: var(--slack-aubergine) !important;
-        color: #ffffff !important;
+        background: var(--slack-sidebar-gradient) !important;
+        color: #1e1b4b !important;
         display: flex;
         flex-direction: column;
-        border-right: 1px solid var(--slack-aubergine-hover) !important;
+        border-right: 1px solid #cbd5e1 !important;
         flex-shrink: 0;
     }
 
     .chat-sidebar-header {
         padding: 16px 20px;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+        border-bottom: 1px solid #cbd5e1 !important;
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -50,7 +51,7 @@
         font-size: 1.05rem;
         font-weight: 700;
         margin: 0;
-        color: #ffffff !important;
+        color: #1e1b4b !important;
         letter-spacing: -0.3px;
     }
 
@@ -71,7 +72,7 @@
         padding: 4px 20px;
         font-size: 0.75rem;
         font-weight: 700;
-        color: var(--slack-sidebar-text) !important;
+        color: #4f46e5 !important;
         text-transform: uppercase;
         letter-spacing: 0.5px;
     }
@@ -79,7 +80,7 @@
     .sidebar-section-header .add-btn {
         background: none;
         border: none;
-        color: var(--slack-sidebar-text) !important;
+        color: #4f46e5 !important;
         cursor: pointer;
         padding: 0;
         font-size: 0.95rem;
@@ -87,7 +88,7 @@
     }
 
     .sidebar-section-header .add-btn:hover {
-        color: #ffffff !important;
+        color: #1e1b4b !important;
     }
 
     .sidebar-list {
@@ -109,13 +110,14 @@
     }
 
     .sidebar-item-link:hover {
-        background-color: var(--slack-aubergine-hover) !important;
-        color: #ffffff !important;
+        background-color: var(--slack-sidebar-hover-bg) !important;
+        color: #1e1b4b !important;
     }
 
     .sidebar-item-link.active {
-        background-color: var(--slack-sidebar-active) !important;
-        color: #ffffff !important;
+        background-color: var(--slack-sidebar-active-bg) !important;
+        color: var(--slack-sidebar-active-text) !important;
+        font-weight: 600;
     }
 
     .sidebar-item-icon {
@@ -130,7 +132,7 @@
         width: 8px;
         height: 8px;
         background-color: transparent;
-        border: 1.5px solid var(--slack-sidebar-text) !important;
+        border: 1.5px solid #3730a3 !important;
         border-radius: 50%;
         margin-right: 8px;
         display: inline-block;
@@ -206,8 +208,8 @@
         width: 36px;
         height: 36px;
         border-radius: 4px;
-        background-color: #cbd5e1;
-        color: #ffffff !important;
+        background-color: #e0e7ff !important;
+        color: #3730a3 !important;
         font-weight: 700;
         font-size: 0.85rem;
         display: flex;
@@ -216,6 +218,7 @@
         margin-right: 12px;
         flex-shrink: 0;
         text-transform: uppercase;
+        border: 1px solid #c7d2fe !important;
     }
 
     .message-content-wrapper {
@@ -393,27 +396,30 @@
     }
 
     .send-msg-btn {
-        background-color: #22c55e !important;
-        color: #ffffff !important;
-        border: none;
+        background-color: #dcfce7 !important; /* Tailwind green-100 */
+        color: #15803d !important; /* Tailwind green-700 */
+        border: 1px solid #bbf7d0 !important; /* Tailwind green-200 */
         border-radius: 4px;
         padding: 6px 12px;
         font-size: 0.85rem;
         font-weight: 600;
         cursor: pointer;
-        transition: background-color 0.15s;
+        transition: all 0.15s;
         display: flex;
         align-items: center;
         gap: 4px;
     }
 
     .send-msg-btn:hover {
-        background-color: #16a34a !important;
+        background-color: #bbf7d0 !important; /* Tailwind green-200 */
+        color: #166534 !important; /* Tailwind green-800 */
+        border-color: #86efac !important; /* Tailwind green-300 */
     }
 
     .send-msg-btn:disabled {
-        background-color: #cbd5e1 !important;
+        background-color: #f1f5f9 !important;
         color: #94a3b8 !important;
+        border-color: #e2e8f0 !important;
         cursor: not-allowed;
     }
 
@@ -619,6 +625,12 @@
         background-color: #f8fafc !important;
         min-width: 0;
         overflow-y: auto;
+        color: #1e293b !important;
+    }
+
+    .admin-dashboard,
+    .admin-dashboard * {
+        color: #1e293b;
     }
 
     .admin-header {
@@ -635,7 +647,7 @@
     .admin-header h6 {
         margin: 0;
         font-weight: 700;
-        color: var(--chat-text-main) !important;
+        color: #0f172a !important;
     }
 
     .admin-content {
@@ -647,20 +659,52 @@
 
     .admin-card {
         background-color: #ffffff !important;
-        border: 1px solid var(--slack-border) !important;
-        border-radius: 8px;
-        padding: 20px;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 12px;
+        padding: 24px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03) !important;
     }
 
     .admin-card-title {
-        font-size: 0.92rem;
+        font-size: 1rem;
         font-weight: 700;
-        color: var(--chat-text-main) !important;
-        margin-bottom: 16px;
+        color: #0f172a !important;
+        border-bottom: 2px solid #6366f1;
+        padding-bottom: 8px;
+        margin-bottom: 18px;
         display: flex;
         align-items: center;
         justify-content: space-between;
+    }
+
+    .admin-card-title span {
+        color: #0f172a !important;
+    }
+
+    .admin-dashboard select, 
+    .admin-dashboard input {
+        color: #0f172a !important;
+        background-color: #ffffff !important;
+        border: 1px solid #cbd5e1 !important;
+    }
+
+    .admin-dashboard select option {
+        color: #0f172a !important;
+        background-color: #ffffff !important;
+    }
+
+    .admin-dashboard table th {
+        color: #334155 !important;
+        background-color: #f1f5f9 !important;
+        font-weight: 700;
+    }
+
+    .admin-dashboard table td {
+        color: #1e293b !important;
+    }
+
+    .admin-dashboard .text-muted {
+        color: #64748b !important;
     }
 
     /* Loading placeholder skeleton */
@@ -755,5 +799,40 @@
 
     .user-chip-remove:hover {
         color: #ef4444 !important;
+    }
+
+    /* Clean up any potential white text in button elements */
+    .admin-dashboard .btn-primary,
+    .slack-modal .btn-primary {
+        background-color: #e0e7ff !important;
+        color: #3730a3 !important;
+        border: 1px solid #c7d2fe !important;
+        font-weight: 600 !important;
+    }
+    .admin-dashboard .btn-primary:hover,
+    .slack-modal .btn-primary:hover {
+        background-color: #c7d2fe !important;
+        color: #1e1b4b !important;
+        border-color: #a5b4fc !important;
+    }
+    .admin-dashboard .btn-outline-secondary,
+    .slack-modal .btn-light {
+        color: #475569 !important;
+        border-color: #cbd5e1 !important;
+        background-color: #f8fafc !important;
+    }
+    .admin-dashboard .btn-outline-secondary:hover,
+    .slack-modal .btn-light:hover {
+        background-color: #e2e8f0 !important;
+        color: #0f172a !important;
+    }
+    .admin-dashboard .btn-danger {
+        background-color: #fee2e2 !important;
+        color: #ef4444 !important;
+        border: 1px solid #fca5a5 !important;
+    }
+    .admin-dashboard .btn-danger:hover {
+        background-color: #fca5a5 !important;
+        color: #991b1b !important;
     }
 </style>

@@ -788,9 +788,10 @@ class EmailController extends Controller
                     ->value('thread_id') ?: (string) Str::uuid();
             }
 
+            $messageId = '<' . time() . '.' . uniqid() . '@mserp.local>';
             $emailId = DB::table('emails')->insertGetId([
                 'email_account_id' => $account->id,
-                'message_id' => '<' . time() . '.' . uniqid() . '@mserp.local>',
+                'message_id' => $messageId,
                 'thread_id' => $threadId,
                 'from_address' => $account->email,
                 'from_name' => $account->display_name,
@@ -815,18 +816,40 @@ class EmailController extends Controller
                 'updated_at' => now(),
             ]);
 
-            // Save attachments metadata
+            // Save attachments metadata systematically by date and message ID with deduplication check
+            $cleanMsgId = trim($messageId, ' <>');
+            $cleanMsgId = preg_replace('/[^a-zA-Z0-9_\-\.@]/', '_', $cleanMsgId);
+
+            $dateSent = now();
+            $ts = strtotime($dateSent);
+            $year = date('Y', $ts);
+            $month = date('m', $ts);
+            $day = date('d', $ts);
+
             foreach ($attachments as $att) {
-                // Keep file in permanent storage
-                $permPath = 'email_attachments/' . $account->id . '/' . uniqid() . '_' . $att['name'];
-                Storage::move(str_replace(storage_path('app/'), '', $att['path']), $permPath);
+                $safeFileName = basename($att['name']);
+                if (empty($safeFileName)) {
+                    $safeFileName = 'attachment_' . uniqid();
+                }
+
+                $permPath = "email_attachments/{$year}/{$month}/{$day}/{$cleanMsgId}/{$safeFileName}";
+                $tempRelativePath = str_replace(storage_path('app/'), '', $att['path']);
+
+                if (Storage::exists($permPath)) {
+                    // Deduplicated: remove the temporary attachment file
+                    Storage::delete($tempRelativePath);
+                } else {
+                    Storage::move($tempRelativePath, $permPath);
+                }
+
+                $fileSize = Storage::exists($permPath) ? Storage::size($permPath) : 0;
 
                 DB::table('email_attachments')->insert([
                     'email_id' => $emailId,
                     'filename' => $att['name'],
                     'file_path' => $permPath,
                     'mime_type' => $att['mime_type'],
-                    'file_size' => @filesize(storage_path('app/' . $permPath)) ?: 0,
+                    'file_size' => $fileSize,
                     'created_at' => now(),
                 ]);
             }
@@ -1526,6 +1549,131 @@ class EmailController extends Controller
                     'updated_at' => now(),
                 ]);
             }
+        }
+    }
+
+    /**
+     * Get all configured email accounts with mapped user assignments.
+     */
+    public function getEmailAccounts()
+    {
+        $this->checkAnyEmailPermission();
+        $accounts = DB::table('email_accounts')->get();
+        foreach ($accounts as $acc) {
+            $acc->users = DB::table('email_account_users')
+                ->join('users', 'email_account_users.user_id', '=', 'users.id')
+                ->where('email_account_users.email_account_id', $acc->id)
+                ->select('users.id', 'users.name', 'users.email')
+                ->get();
+        }
+        return response()->json($accounts);
+    }
+
+    /**
+     * Store or update an email account configuration with user mapping.
+     */
+    public function storeEmailAccount(Request $request)
+    {
+        $this->checkAnyEmailPermission();
+        
+        $rules = [
+            'id' => 'nullable|integer',
+            'email' => 'required|email',
+            'display_name' => 'required|string|max:255',
+            'smtp_host' => 'required|string|max:255',
+            'smtp_port' => 'required|integer',
+            'smtp_encryption' => 'required|string|in:ssl,tls,starttls,none',
+            'smtp_user' => 'required|string|max:255',
+            'imap_host' => 'required|string|max:255',
+            'imap_port' => 'required|integer',
+            'imap_encryption' => 'required|string|in:ssl,tls,starttls,none',
+            'imap_user' => 'required|string|max:255',
+            'user_ids' => 'nullable|array',
+            'user_ids.*' => 'integer'
+        ];
+
+        $id = $request->input('id');
+        if (!$id) {
+            $rules['password'] = 'required|string|min:4';
+        } else {
+            $rules['password'] = 'nullable|string|min:4';
+        }
+
+        $request->validate($rules);
+
+        $data = [
+            'email' => $request->input('email'),
+            'display_name' => $request->input('display_name'),
+            'smtp_host' => $request->input('smtp_host'),
+            'smtp_port' => $request->input('smtp_port'),
+            'smtp_encryption' => $request->input('smtp_encryption'),
+            'smtp_user' => $request->input('smtp_user'),
+            'imap_host' => $request->input('imap_host'),
+            'imap_port' => $request->input('imap_port'),
+            'imap_encryption' => $request->input('imap_encryption'),
+            'imap_user' => $request->input('imap_user'),
+            'is_active' => true,
+            'updated_at' => now()
+        ];
+
+        $password = $request->input('password');
+        if ($password !== null && $password !== '') {
+            $data['smtp_password'] = encrypt($password);
+            $data['imap_password'] = encrypt($password);
+        }
+
+        DB::beginTransaction();
+        try {
+            if ($id) {
+                DB::table('email_accounts')->where('id', $id)->update($data);
+                $accountId = $id;
+            } else {
+                $data['created_at'] = now();
+                $accountId = DB::table('email_accounts')->insertGetId($data);
+            }
+
+            // Sync User assignments
+            DB::table('email_account_users')->where('email_account_id', $accountId)->delete();
+            
+            $userIds = $request->input('user_ids', []);
+            if (!empty($userIds)) {
+                $mappings = [];
+                foreach ($userIds as $uId) {
+                    $mappings[] = [
+                        'email_account_id' => $accountId,
+                        'user_id' => $uId,
+                        'created_at' => now(),
+                        'updated_at' => now()
+                    ];
+                }
+                DB::table('email_account_users')->insert($mappings);
+            }
+
+            DB::commit();
+            return response()->json(['success' => true, 'message' => 'Email Account saved successfully.']);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Delete an email account and its assignments.
+     */
+    public function deleteEmailAccount($id)
+    {
+        $this->checkAnyEmailPermission();
+        
+        DB::beginTransaction();
+        try {
+            DB::table('email_accounts')->where('id', $id)->delete();
+            DB::table('email_account_users')->where('email_account_id', $id)->delete();
+            
+            DB::commit();
+            return response()->json(['success' => true, 'message' => 'Email Account deleted.']);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
         }
     }
 }

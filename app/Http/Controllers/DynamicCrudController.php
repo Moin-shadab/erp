@@ -91,6 +91,21 @@ class DynamicCrudController extends Controller
                 ));
             }
 
+            if (str_contains($pageConfig->custom_view, 'email/accounts')) {
+                $accounts = DB::table('email_accounts')->get();
+                foreach ($accounts as $acc) {
+                    $acc->user_ids = DB::table('email_account_users')
+                        ->where('email_account_id', $acc->id)
+                        ->pluck('user_id')
+                        ->toArray();
+                }
+                $users = DB::table('users')->where('is_active', true)->select('id', 'name', 'email')->get();
+                return view('modules.loader', array_merge(
+                    compact('pageConfig', 'permissions', 'accounts', 'users'),
+                    ['pageDir' => $pageConfig->custom_view]
+                ));
+            }
+
             if (str_contains($pageConfig->custom_view, 'email/inbox')) {
                 $user = Auth::user();
                 $accountId = session('active_email_account_id');
