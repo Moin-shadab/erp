@@ -158,6 +158,35 @@ Route::middleware(['auth'])->group(function () {
         return response()->json(['success' => true]);
     });
 
+    Route::post('/api/notifications/test-send', function (Request $request) {
+        $request->validate([
+            'sender_id' => 'required|integer',
+            'title' => 'required|string|max:255',
+            'message' => 'required|string|max:1000',
+        ]);
+        
+        $receivers = DB::table('notification_routes')
+            ->join('users', 'notification_routes.receiver_id', '=', 'users.id')
+            ->where('notification_routes.sender_id', $request->sender_id)
+            ->where('notification_routes.is_active', true)
+            ->select('users.id', 'users.name')
+            ->get();
+            
+        foreach ($receivers as $receiver) {
+            \App\Services\NotificationService::sendDirect(
+                $receiver->id,
+                $request->title,
+                $request->message,
+                'SYSTEM'
+            );
+        }
+        
+        return response()->json([
+            'success' => true,
+            'receivers' => $receivers->pluck('name')->toArray()
+        ]);
+    });
+
     Route::post('/api/notifications/broadcast/acknowledge/{id}', function ($id) {
         DB::table('broadcast_read_receipts')->insert([
             'broadcast_id' => $id,

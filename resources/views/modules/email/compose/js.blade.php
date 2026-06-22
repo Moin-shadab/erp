@@ -1,13 +1,24 @@
-// Rich Text Editor Commands
-function execCmd(command, val = null) {
-    document.execCommand(command, false, val);
-}
-
-function insertLink() {
-    const url = prompt("Enter link URL:");
-    if (url) {
-        execCmd('createLink', url);
-    }
+// Initialize Quill Editor
+let quill = null;
+if (document.getElementById('compose-editor')) {
+    quill = new Quill('#compose-editor', {
+        theme: 'snow',
+        placeholder: 'Write your email here...',
+        modules: {
+            toolbar: [
+                ['bold', 'italic', 'underline', 'strike'],        // toggled buttons
+                ['blockquote', 'code-block'],
+                [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+                [{ 'script': 'sub'}, { 'script': 'super' }],      // superscript/subscript
+                [{ 'indent': '-1'}, { 'indent': '+1' }],          // outdent/indent
+                [{ 'header': [1, 2, 3, 4, 5, 6, false] }],
+                [{ 'color': [] }, { 'background': [] }],          // dropdown with defaults from theme
+                [{ 'align': [] }],
+                ['link', 'image'],
+                ['clean']                                         // remove formatting button
+            ]
+        }
+    });
 }
 
 // Attachment files handling
@@ -73,20 +84,20 @@ function renderFileList() {
 // Templates and signatures injection
 function applyTemplate(tmpl) {
     document.getElementById('c-subject').value = tmpl.subject || '';
-    document.getElementById('compose-body').innerHTML = tmpl.body || '';
+    if (quill) {
+        quill.root.innerHTML = tmpl.body || '';
+    }
     toggleSignature(); // append signature if active
     showToast('success', 'Template applied.');
 }
 
 function toggleSignature() {
+    if (!quill) return;
     const hasSig = document.getElementById('signature-switch') ? document.getElementById('signature-switch').checked : false;
     const sigVal = document.getElementById('raw-signature') ? document.getElementById('raw-signature').value : '';
-    const editor = document.getElementById('compose-body');
-
-    if (!editor) return;
 
     // Remove existing signature placeholder if present
-    let html = editor.innerHTML;
+    let html = quill.root.innerHTML;
     const sigMarkIndex = html.indexOf('<div class="email-sig-wrapper"');
     if (sigMarkIndex !== -1) {
         html = html.substring(0, sigMarkIndex);
@@ -96,7 +107,7 @@ function toggleSignature() {
         html += `<div class="email-sig-wrapper" style="margin-top: 20px;"><br>--<br>${sigVal}</div>`;
     }
 
-    editor.innerHTML = html;
+    quill.root.innerHTML = html;
 }
 
 // Append signature initially if exists
@@ -105,13 +116,14 @@ setTimeout(toggleSignature, 100);
 // Auto-save draft setup
 let isFormDirty = false;
 const composeForm = document.getElementById('email-compose-form');
-const composeBody = document.getElementById('compose-body');
 
 if (composeForm) {
     composeForm.oninput = () => isFormDirty = true;
 }
-if (composeBody) {
-    composeBody.oninput = () => isFormDirty = true;
+if (quill) {
+    quill.on('text-change', () => {
+        isFormDirty = true;
+    });
 }
 
 const autoSaveInterval = setInterval(() => {
@@ -124,7 +136,7 @@ const autoSaveInterval = setInterval(() => {
 const mainContent = document.getElementById('main-content');
 if (mainContent) {
     const observer = new MutationObserver((mutations, obs) => {
-        if (!document.getElementById('compose-body')) {
+        if (!document.getElementById('compose-editor')) {
             clearInterval(autoSaveInterval);
             obs.disconnect();
         }
@@ -139,9 +151,8 @@ function saveAsDraft(silent = false) {
     const cCcInput = document.getElementById('c-cc');
     const cBccInput = document.getElementById('c-bcc');
     const cSubjectInput = document.getElementById('c-subject');
-    const composeBodyDiv = document.getElementById('compose-body');
 
-    if (!composeBodyDiv) return;
+    if (!quill) return;
 
     const draftId = draftIdInput ? draftIdInput.value : '';
     const threadId = threadIdInput ? threadIdInput.value : '';
@@ -149,7 +160,7 @@ function saveAsDraft(silent = false) {
     const cc = cCcInput ? cCcInput.value : '';
     const bcc = cBccInput ? cBccInput.value : '';
     const subject = cSubjectInput ? cSubjectInput.value : '';
-    const bodyHtml = composeBodyDiv.innerHTML;
+    const bodyHtml = quill.root.innerHTML;
 
     const data = {
         draft_id: draftId,
@@ -183,15 +194,15 @@ function saveAsDraft(silent = false) {
 
 // Send email
 function sendEmail() {
-    const form = document.getElementById('email-compose-form');
     const to = document.getElementById('c-to') ? document.getElementById('c-to').value : '';
     const cc = document.getElementById('c-cc') ? document.getElementById('c-cc').value : '';
     const bcc = document.getElementById('c-bcc') ? document.getElementById('c-bcc').value : '';
     const subject = document.getElementById('c-subject') ? document.getElementById('c-subject').value : '';
-    const bodyHtml = document.getElementById('compose-body') ? document.getElementById('compose-body').innerHTML : '';
+    const bodyHtml = quill ? quill.root.innerHTML : '';
     const threadId = document.getElementById('thread-id') ? document.getElementById('thread-id').value : '';
+    const inReplyTo = document.getElementById('in-reply-to') ? document.getElementById('in-reply-to').value : '';
 
-    if (!to || !subject || !bodyHtml.trim()) {
+    if (!to || !subject || !bodyHtml.replace(/<[^>]*>/g, '').trim()) {
         showToast('danger', 'Please complete the To, Subject, and Body fields.');
         return;
     }
@@ -204,6 +215,9 @@ function sendEmail() {
     formData.append('body_html', bodyHtml);
     if (threadId) {
         formData.append('thread_id', threadId);
+    }
+    if (inReplyTo) {
+        formData.append('in_reply_to', inReplyTo);
     }
 
     // Add attachments files
@@ -251,9 +265,7 @@ function sendEmail() {
     });
 }
 
-// Bind functions to window object for inline HTML event handlers (e.g. onclick) when executed inside an IIFE
-window.execCmd = execCmd;
-window.insertLink = insertLink;
+// Bind functions to window
 window.handleFileSelect = handleFileSelect;
 window.addFiles = addFiles;
 window.removeFile = removeFile;

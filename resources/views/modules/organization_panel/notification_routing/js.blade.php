@@ -252,5 +252,51 @@
 
         updateRouteRule(draggedUserId, direction, true);
     };
+
+    window.sendTestNotification = function() {
+        if (!activeUserId) {
+            showToast('warning', 'Please select an active user first.');
+            return;
+        }
+
+        const title = document.getElementById('test-notif-title').value.trim();
+        const message = document.getElementById('test-notif-message').value.trim();
+
+        if (!title || !message) {
+            showToast('warning', 'Please fill in both title and message.');
+            return;
+        }
+
+        fetch('/api/notifications/test-send', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+            },
+            body: JSON.stringify({
+                sender_id: activeUserId,
+                title: title,
+                message: message
+            })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                if (data.receivers.length > 0) {
+                    showToast('success', `Test routed notification successfully sent to: ${data.receivers.join(', ')}`);
+                } else {
+                    showToast('warning', 'Notification sent, but no active outgoing receivers are mapped for this user.');
+                }
+                // Clear inputs
+                document.getElementById('test-notif-title').value = '';
+                document.getElementById('test-notif-message').value = '';
+            } else {
+                showToast('danger', 'Failed to send test notification.');
+            }
+        })
+        .catch(() => {
+            showToast('danger', 'Network error.');
+        });
+    };
 })();
 </script>

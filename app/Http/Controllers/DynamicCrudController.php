@@ -57,6 +57,10 @@ class DynamicCrudController extends Controller
         $pageConfig->form_schema = json_encode($formSchema);
 
         if ($pageConfig->is_custom && !empty($pageConfig->custom_view)) {
+            if (str_contains($pageConfig->custom_view, 'email/')) {
+                app(\App\Http\Controllers\EmailController::class)->ensureEmailTablesExist();
+            }
+
             if (str_contains($pageConfig->custom_view, 'permissions_matrix')) {
                 $roles = DB::table('roles')->get();
                 $activeRoleId = request()->query('role_id', $roles->first()->id);

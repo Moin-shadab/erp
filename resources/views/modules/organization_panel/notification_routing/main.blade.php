@@ -160,6 +160,29 @@
                                     </div>
                                 </div>
                             </div>
+                    </div>
+
+                    <!-- Test Notification Routing -->
+                    <div class="border-top mt-4 pt-4">
+                        <h6 class="fw-bold text-dark mb-2">
+                            <i class="bi bi-bell text-warning me-2"></i>
+                            Test Notification Routing
+                        </h6>
+                        <p class="text-muted small mb-3">
+                            Simulate sending a notification from <strong class="active-user-name-text">Active User</strong>. It will be routed to all active <strong>Outgoing Receivers</strong> configured above.
+                        </p>
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <input type="text" id="test-notif-title" class="form-control form-control-sm border" placeholder="Notification Title (e.g. Action Required)">
+                            </div>
+                            <div class="col-md-6">
+                                <input type="text" id="test-notif-message" class="form-control form-control-sm border" placeholder="Notification Message (e.g. Please review the pending draft invoice.)">
+                            </div>
+                            <div class="col-md-2">
+                                <button class="btn btn-sm btn-warning fw-bold w-100" onclick="sendTestNotification()">
+                                    <i class="bi bi-send me-1"></i> Send Test
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

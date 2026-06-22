@@ -748,6 +748,23 @@ class EmailController extends Controller
 
         $sentOk = false;
         
+        $inReplyTo = $request->input('in_reply_to');
+        $references = null;
+        $inReplyToClean = $inReplyTo ? trim($inReplyTo, ' <>') : null;
+
+        if ($inReplyToClean) {
+            $parentMail = DB::table('emails')
+                ->where('email_account_id', $account->id)
+                ->where('message_id', $inReplyToClean)
+                ->first();
+            if ($parentMail) {
+                $parentRefs = $parentMail->references;
+                $references = $parentRefs ? ($parentRefs . ' <' . $inReplyToClean . '>') : ('<' . $inReplyToClean . '>');
+            } else {
+                $references = '<' . $inReplyToClean . '>';
+            }
+        }
+
         if ($isPlaceholder) {
             // Emulate send success in simulator mode
             $sentOk = true;
@@ -770,7 +787,9 @@ class EmailController extends Controller
                     $subject,
                     $bodyHtml,
                     $bodyText,
-                    $attachments
+                    $attachments,
+                    $inReplyToClean,
+                    $references
                 );
             } catch (\Exception $e) {
                 return response()->json(['error' => 'SMTP client error: ' . $e->getMessage()], 500);
@@ -789,9 +808,13 @@ class EmailController extends Controller
             }
 
             $messageId = '<' . time() . '.' . uniqid() . '@mserp.local>';
+            $cleanMsgId = trim($messageId, ' <>');
+
             $emailId = DB::table('emails')->insertGetId([
                 'email_account_id' => $account->id,
-                'message_id' => $messageId,
+                'message_id' => $cleanMsgId,
+                'in_reply_to' => $inReplyToClean,
+                'references' => $references,
                 'thread_id' => $threadId,
                 'from_address' => $account->email,
                 'from_name' => $account->display_name,
@@ -816,42 +839,26 @@ class EmailController extends Controller
                 'updated_at' => now(),
             ]);
 
-            // Save attachments metadata systematically by date and message ID with deduplication check
-            $cleanMsgId = trim($messageId, ' <>');
-            $cleanMsgId = preg_replace('/[^a-zA-Z0-9_\-\.@]/', '_', $cleanMsgId);
-
-            $dateSent = now();
-            $ts = strtotime($dateSent);
-            $year = date('Y', $ts);
-            $month = date('m', $ts);
-            $day = date('d', $ts);
-
             foreach ($attachments as $att) {
-                $safeFileName = basename($att['name']);
-                if (empty($safeFileName)) {
-                    $safeFileName = 'attachment_' . uniqid();
-                }
+                if (file_exists($att['path'])) {
+                    $fileContent = file_get_contents($att['path']);
+                    
+                    // Save using CAS
+                    $this->syncService->saveAttachmentCas(
+                        $fileContent,
+                        $att['name'],
+                        $att['mime_type'],
+                        now()->format('Y-m-d H:i:s'),
+                        $messageId,
+                        $emailId,
+                        null,
+                        false
+                    );
 
-                $permPath = "email_attachments/{$year}/{$month}/{$day}/{$cleanMsgId}/{$safeFileName}";
-                $tempRelativePath = str_replace(storage_path('app/'), '', $att['path']);
-
-                if (Storage::exists($permPath)) {
-                    // Deduplicated: remove the temporary attachment file
+                    // Clean up the temporary attachment file
+                    $tempRelativePath = str_replace(storage_path('app/'), '', $att['path']);
                     Storage::delete($tempRelativePath);
-                } else {
-                    Storage::move($tempRelativePath, $permPath);
                 }
-
-                $fileSize = Storage::exists($permPath) ? Storage::size($permPath) : 0;
-
-                DB::table('email_attachments')->insert([
-                    'email_id' => $emailId,
-                    'filename' => $att['name'],
-                    'file_path' => $permPath,
-                    'mime_type' => $att['mime_type'],
-                    'file_size' => $fileSize,
-                    'created_at' => now(),
-                ]);
             }
 
             return response()->json(['success' => true, 'message' => 'Email transmitted successfully.']);
@@ -1240,7 +1247,7 @@ class EmailController extends Controller
         ]);
     }
 
-    protected function ensureEmailTablesExist()
+    public function ensureEmailTablesExist()
     {
         if (!Schema::hasTable('email_account_users')) {
             Schema::create('email_account_users', function ($table) {
@@ -1299,13 +1306,15 @@ class EmailController extends Controller
                         ]);
                     }
                 }
-                // Drop foreign key and column
-                Schema::table('email_accounts', function ($table) {
-                    try {
-                        $table->dropForeign('email_accounts_user_id_foreign');
-                    } catch (\Exception $e) {}
-                    $table->dropColumn('user_id');
-                });
+                // Drop foreign key and column (skipped on SQLite tests)
+                if (DB::connection()->getDriverName() !== 'sqlite') {
+                    Schema::table('email_accounts', function ($table) {
+                        try {
+                            $table->dropForeign('email_accounts_user_id_foreign');
+                        } catch (\Exception $e) {}
+                        $table->dropColumn('user_id');
+                    });
+                }
             }
         }
 
@@ -1320,6 +1329,8 @@ class EmailController extends Controller
                 $table->id();
                 $table->unsignedBigInteger('email_account_id');
                 $table->string('message_id')->nullable()->index();
+                $table->string('in_reply_to')->nullable()->index();
+                $table->text('references')->nullable();
                 $table->string('thread_id')->nullable()->index();
                 $table->string('uid')->nullable()->index();
                 $table->string('from_address');
@@ -1335,6 +1346,17 @@ class EmailController extends Controller
                 $table->boolean('has_attachments')->default(false);
                 $table->timestamps();
             });
+        } else {
+            if (!Schema::hasColumn('emails', 'in_reply_to')) {
+                Schema::table('emails', function ($table) {
+                    $table->string('in_reply_to')->nullable()->index()->after('message_id');
+                });
+            }
+            if (!Schema::hasColumn('emails', 'references')) {
+                Schema::table('emails', function ($table) {
+                    $table->text('references')->nullable()->after('in_reply_to');
+                });
+            }
         }
 
         if (!Schema::hasTable('email_bodies')) {
@@ -1413,7 +1435,7 @@ class EmailController extends Controller
                     });
                 }
             } catch (\Exception $e) {
-                Log::warning("Dynamic index creation warning: " . $e->getMessage());
+                \Illuminate\Support\Facades\Log::warning("Dynamic index creation warning: " . $e->getMessage());
             }
         }
 
@@ -1427,6 +1449,7 @@ class EmailController extends Controller
                 $table->string('content_id')->nullable();
                 $table->boolean('is_inline')->default(false);
                 $table->integer('file_size')->default(0);
+                $table->string('sha256', 64)->nullable()->index();
                 $table->timestamp('created_at')->useCurrent();
             });
         } else {
@@ -1439,6 +1462,11 @@ class EmailController extends Controller
             if (!Schema::hasColumn('email_attachments', 'is_inline')) {
                 Schema::table('email_attachments', function ($table) {
                     $table->boolean('is_inline')->default(false)->after('content_id');
+                });
+            }
+            if (!Schema::hasColumn('email_attachments', 'sha256')) {
+                Schema::table('email_attachments', function ($table) {
+                    $table->string('sha256', 64)->nullable()->index()->after('file_size');
                 });
             }
         }
@@ -1523,7 +1551,7 @@ class EmailController extends Controller
                 // Avoid inserting duplicate email address if it already exists from another user
                 $accountId = DB::table('email_accounts')->where('email', $user->email)->value('id');
                 if (!$accountId) {
-                    $accountId = DB::table('email_accounts')->insertGetId([
+                    $insertData = [
                         'email' => $user->email,
                         'display_name' => $user->name,
                         'smtp_host' => 'smtp.example.com',
@@ -1539,7 +1567,11 @@ class EmailController extends Controller
                         'is_active' => true,
                         'created_at' => now(),
                         'updated_at' => now(),
-                    ]);
+                    ];
+                    if (Schema::hasColumn('email_accounts', 'user_id')) {
+                        $insertData['user_id'] = $userId;
+                    }
+                    $accountId = DB::table('email_accounts')->insertGetId($insertData);
                 }
 
                 DB::table('email_account_users')->insertOrIgnore([

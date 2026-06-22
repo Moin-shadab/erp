@@ -1,3 +1,7 @@
+var gridOptions = null;
+var pageSlug = "{{ $pageConfig->slug }}";
+var primaryKey = "{{ $pageConfig->primary_key }}";
+
 // Ensure AG Grid JS is loaded
 if (typeof agGrid === 'undefined') {
     const gridScript = document.createElement('script');
@@ -7,10 +11,6 @@ if (typeof agGrid === 'undefined') {
 } else {
     initAgGrid();
 }
-
-var gridOptions = null;
-var pageSlug = "{{ $pageConfig->slug }}";
-var primaryKey = "{{ $pageConfig->primary_key }}";
 
 function initAgGrid() {
     const gridDiv = document.querySelector('#crudGrid');

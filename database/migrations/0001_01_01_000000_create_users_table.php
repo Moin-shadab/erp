@@ -64,6 +64,7 @@ return new class extends Migration
             $table->foreignId('department_id')->nullable()->constrained()->onDelete('set null');
             $table->foreignId('reports_to_id')->nullable()->constrained('users')->onDelete('set null');
             $table->boolean('is_active')->default(true);
+            $table->boolean('can_send_to_anyone')->default(false);
             $table->rememberToken();
             $table->timestamps();
         });

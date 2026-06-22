@@ -84,14 +84,19 @@ class EmailSyncService
             $syncedCount = 0;
             $newUids = [];
 
-            // Identify UIDs we don't have yet
-            foreach ($uids as $uid) {
-                $exists = DB::table('emails')
-                    ->where('email_account_id', $accountId)
-                    ->where('uid', $uid)
-                    ->exists();
+            // Identify UIDs we don't have yet (optimized single DB query + O(1) lookup)
+            $existingUids = DB::table('emails')
+                ->where('email_account_id', $accountId)
+                ->whereNotNull('uid')
+                ->pluck('uid')
+                ->toArray();
+            $existingUids = array_filter($existingUids, function($v) {
+                return (is_string($v) || is_int($v)) && $v !== '';
+            });
+            $existingUidsMap = array_flip($existingUids);
 
-                if (!$exists) {
+            foreach ($uids as $uid) {
+                if (!isset($existingUidsMap[$uid])) {
                     $newUids[] = $uid;
                 }
             }
@@ -105,12 +110,13 @@ class EmailSyncService
                     if (!isset($overviews[$uid])) continue;
                     $ov = $overviews[$uid];
 
-                    // Check duplicate by message_id
+                    // Check duplicate by message_id in the target folder
                     $messageId = $ov['message_id'];
                     if (!empty($messageId)) {
                         $existingEmail = DB::table('emails')
                             ->where('email_account_id', $accountId)
                             ->where('message_id', $messageId)
+                            ->where('folder', 'INBOX')
                             ->first();
                         
                         if ($existingEmail) {
@@ -216,6 +222,9 @@ class EmailSyncService
             $ts = $dateStr ? strtotime($dateStr) : false;
             $dateSent = ($ts !== false && $ts > 0) ? date('Y-m-d H:i:s', $ts) : now();
 
+            $inReplyTo = isset($headers['in-reply-to']) ? trim($headers['in-reply-to'], ' <>') : null;
+            $references = $headers['references'] ?? null;
+
             $flatted = MimeParser::flatten($parsedMime);
             $bodyHtml = $flatted['html'];
             $bodyText = $flatted['text'];
@@ -248,16 +257,18 @@ class EmailSyncService
         } else {
             // It's simulated mock email array
             $parsed = $parsedOrRaw;
-            $subject = $parsed['subject'];
-            $fromAddress = $parsed['from_address'];
-            $fromName = $parsed['from_name'];
-            $to = $parsed['to_address'];
-            $cc = $parsed['cc_address'];
-            $bcc = $parsed['bcc_address'];
-            $messageId = $parsed['message_id'];
-            $dateSent = $parsed['date_sent'];
-            $bodyHtml = $parsed['body_html'];
-            $bodyText = $parsed['body_text'];
+            $subject = $parsed['subject'] ?? '';
+            $fromAddress = $parsed['from_address'] ?? '';
+            $fromName = $parsed['from_name'] ?? null;
+            $to = $parsed['to_address'] ?? '';
+            $cc = $parsed['cc_address'] ?? null;
+            $bcc = $parsed['bcc_address'] ?? null;
+            $messageId = $parsed['message_id'] ?? null;
+            $dateSent = $parsed['date_sent'] ?? now()->format('Y-m-d H:i:s');
+            $bodyHtml = $parsed['body_html'] ?? null;
+            $bodyText = $parsed['body_text'] ?? null;
+            $inReplyTo = $parsed['in_reply_to'] ?? null;
+            $references = $parsed['references'] ?? null;
             
             $attachments = [];
             if (!empty($parsed['attachments'])) {
@@ -273,6 +284,60 @@ class EmailSyncService
             }
         }
 
+        $inReplyToClean = $inReplyTo ? trim($inReplyTo, ' <>') : null;
+        $referencesClean = $references ? trim($references) : null;
+
+        $threadId = null;
+        if ($existingEmailId) {
+            $existingEmail = DB::table('emails')->where('id', $existingEmailId)->first();
+            $threadId = $existingEmail ? $existingEmail->thread_id : null;
+        }
+
+        if (empty($threadId)) {
+            // 1. Try In-Reply-To
+            if (!empty($inReplyToClean)) {
+                $parent = DB::table('emails')
+                    ->where('email_account_id', $account->id)
+                    ->where('message_id', $inReplyToClean)
+                    ->first();
+                if ($parent) {
+                    $threadId = $parent->thread_id;
+                }
+            }
+
+            // 2. Try References
+            if (empty($threadId) && !empty($referencesClean)) {
+                $refIds = preg_split('/\s+/', $referencesClean);
+                $refIdsClean = array_filter(array_map(function($id) {
+                    return trim($id, ' <>');
+                }, $refIds));
+
+                if (!empty($refIdsClean)) {
+                    $referencedEmail = DB::table('emails')
+                        ->where('email_account_id', $account->id)
+                        ->whereIn('message_id', $refIdsClean)
+                        ->first();
+                    if ($referencedEmail) {
+                        $threadId = $referencedEmail->thread_id;
+                    }
+                }
+            }
+
+            // 3. Try Subject-based matching
+            if (empty($threadId)) {
+                $cleanSubject = preg_replace('/^(Re|Fwd):\s*/i', '', $subject);
+                $threadId = DB::table('emails')
+                    ->where('email_account_id', $account->id)
+                    ->where('subject', 'like', '%' . $cleanSubject . '%')
+                    ->value('thread_id');
+            }
+
+            // 4. Default to new UUID
+            if (empty($threadId)) {
+                $threadId = (string) Str::uuid();
+            }
+        }
+
         if ($existingEmailId) {
             // Lazy loading update: update body fields and attachments flag
             DB::table('emails')->where('id', $existingEmailId)->update([
@@ -281,12 +346,13 @@ class EmailSyncService
             ]);
             $emailId = $existingEmailId;
         } else {
-            // Deduplication check: check if email already exists by message_id
+            // Deduplication check: check if email already exists by message_id in this folder
             $existing = null;
             if (!empty($messageId)) {
                 $existing = DB::table('emails')
                     ->where('email_account_id', $account->id)
                     ->where('message_id', $messageId)
+                    ->where('folder', $folder)
                     ->first();
             }
 
@@ -295,22 +361,19 @@ class EmailSyncService
                 $updateData = [
                     'uid' => $uid ?: $existing->uid,
                     'folder' => $folder ?: $existing->folder,
+                    'in_reply_to' => $inReplyToClean,
+                    'references' => $referencesClean,
                     'updated_at' => now(),
                 ];
                 DB::table('emails')->where('id', $existing->id)->update($updateData);
                 $emailId = $existing->id;
             } else {
-                // Generate thread ID
-                $cleanSubject = preg_replace('/^(Re|Fwd):\s*/i', '', $subject);
-                $threadId = DB::table('emails')
-                    ->where('email_account_id', $account->id)
-                    ->where('subject', 'like', '%' . $cleanSubject . '%')
-                    ->value('thread_id') ?: (string) Str::uuid();
-
                 // Insert email
                 $emailId = DB::table('emails')->insertGetId([
                     'email_account_id' => $account->id,
                     'message_id' => $messageId,
+                    'in_reply_to' => $inReplyToClean,
+                    'references' => $referencesClean,
                     'thread_id' => $threadId,
                     'uid' => $uid,
                     'from_address' => $fromAddress,
@@ -381,36 +444,17 @@ class EmailSyncService
                 continue;
             }
 
-            // Save to storage systematically by date and message ID with deduplication check
-            $cleanMsgId = trim($messageId, ' <>');
-            $cleanMsgId = preg_replace('/[^a-zA-Z0-9_\-\.@]/', '_', $cleanMsgId);
-
-            $ts = strtotime($dateSent);
-            $year = $ts ? date('Y', $ts) : date('Y');
-            $month = $ts ? date('m', $ts) : date('m');
-            $day = $ts ? date('d', $ts) : date('d');
-
-            $safeFileName = basename($fileName);
-            if (empty($safeFileName)) {
-                $safeFileName = 'attachment_' . uniqid();
-            }
-
-            $storagePath = "email_attachments/{$year}/{$month}/{$day}/{$cleanMsgId}/{$safeFileName}";
-
-            if (!Storage::exists($storagePath)) {
-                Storage::put($storagePath, $fileContent);
-            }
-
-            $attId = DB::table('email_attachments')->insertGetId([
-                'email_id' => $emailId,
-                'filename' => $fileName,
-                'file_path' => $storagePath,
-                'mime_type' => $att['mime_type'],
-                'content_id' => $contentId,
-                'is_inline' => $isInline,
-                'file_size' => $fileSize,
-                'created_at' => now(),
-            ]);
+            // Save using CAS
+            $attId = $this->saveAttachmentCas(
+                $fileContent,
+                $fileName,
+                $att['mime_type'] ?? null,
+                $dateSent,
+                $messageId,
+                $emailId,
+                $contentId,
+                $isInline
+            );
 
             if ($contentId && !empty($bodyHtml)) {
                 $cidPattern = 'cid:' . preg_quote($contentId, '/');
@@ -435,16 +479,104 @@ class EmailSyncService
             ->where('email_account_id', $account->id)
             ->pluck('user_id');
         foreach ($assignedUserIds as $uId) {
-            $this->autoCreateContact($uId, $fromAddress, $fromName);
+            $this->autoCreateContact($uId, $fromAddress, $fromName ?: '');
         }
 
         return $emailId;
     }
 
     /**
+     * Save file content using Content-Addressable Storage (CAS) to optimize disk space,
+     * and link it to the requested human-readable path.
+     */
+    public function saveAttachmentCas(
+        string $fileContent,
+        string $fileName,
+        ?string $mimeType,
+        ?string $dateSent,
+        string $messageId,
+        int $emailId,
+        ?string $contentId = null,
+        bool $isInline = false
+    ): int {
+        $sha256 = hash('sha256', $fileContent);
+        $fileSize = strlen($fileContent);
+
+        $casDir = "email_attachments/cas";
+        $casPath = "{$casDir}/{$sha256}";
+
+        if (!Storage::exists($casPath)) {
+            Storage::put($casPath, $fileContent);
+        }
+
+        $emailRecord = DB::table('emails')->where('id', $emailId)->first();
+        $accountId = $emailRecord ? $emailRecord->email_account_id : 0;
+        $emailAccount = DB::table('email_accounts')->where('id', $accountId)->first();
+        $accountEmailDir = $emailAccount ? preg_replace('/[^a-zA-Z0-9_\-\.@]/', '_', $emailAccount->email) : 'default';
+
+        $cleanMsgId = trim($messageId, ' <>');
+        $cleanMsgId = preg_replace('/[^a-zA-Z0-9_\-\.@]/', '_', $cleanMsgId);
+        $messageIdHash = md5($messageId);
+
+        $ts = $dateSent ? strtotime($dateSent) : time();
+        $year = date('Y', $ts);
+        $month = date('m', $ts);
+        $day = date('d', $ts);
+
+        $safeFileName = basename($fileName);
+        if (empty($safeFileName)) {
+            $safeFileName = 'attachment_' . uniqid();
+        }
+
+        $readablePath = "email_attachments/{$accountEmailDir}/{$year}/{$month}/{$day}/{$messageIdHash}/{$safeFileName}";
+
+        $absoluteCasPath = storage_path('app/' . $casPath);
+        $absoluteReadablePath = storage_path('app/' . $readablePath);
+
+        if (!file_exists($absoluteReadablePath)) {
+            if (file_exists($absoluteCasPath)) {
+                $targetDir = storage_path('app/' . dirname($readablePath));
+                if (!file_exists($targetDir)) {
+                    mkdir($targetDir, 0755, true);
+                }
+                try {
+                    if (!@link($absoluteCasPath, $absoluteReadablePath)) {
+                        if (!@symlink($absoluteCasPath, $absoluteReadablePath)) {
+                            Storage::copy($casPath, $readablePath);
+                        }
+                    }
+                } catch (\Exception $e) {
+                    try {
+                        if (!@symlink($absoluteCasPath, $absoluteReadablePath)) {
+                            Storage::copy($casPath, $readablePath);
+                        }
+                    } catch (\Exception $ex) {
+                        Storage::copy($casPath, $readablePath);
+                    }
+                }
+            } else {
+                // Fallback for virtual filesystems (e.g. testing using Storage::fake())
+                Storage::copy($casPath, $readablePath);
+            }
+        }
+
+        return DB::table('email_attachments')->insertGetId([
+            'email_id' => $emailId,
+            'filename' => $fileName,
+            'file_path' => $readablePath,
+            'mime_type' => $mimeType,
+            'content_id' => $contentId,
+            'is_inline' => $isInline,
+            'file_size' => $fileSize,
+            'sha256' => $sha256,
+            'created_at' => now(),
+        ]);
+    }
+
+    /**
      * Add sender to contacts if not already present.
      */
-    protected function autoCreateContact(int $userId, string $email, string $name): void
+    protected function autoCreateContact(int $userId, string $email, ?string $name): void
     {
         if (empty($email)) return;
 

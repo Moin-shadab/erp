@@ -37,6 +37,8 @@ class MimeParser
     public static function toUtf8(string $text, string $charset = 'UTF-8'): string
     {
         $cs = strtoupper(trim($charset));
+        // Strip any RFC 2231/2047 language suffixes (e.g. UTF-8*en or ISO-8859-1*en)
+        $cs = explode('*', $cs)[0];
         $cs = self::$CS_ALIASES[$cs] ?? $cs;
 
         if ($cs === 'UTF-8' || $cs === '') {
@@ -49,8 +51,19 @@ class MimeParser
 
         $result = @iconv($cs, 'UTF-8//TRANSLIT//IGNORE', $text);
         if ($result === false || $result === '') {
-            $result = @mb_convert_encoding($text, 'UTF-8', $cs);
+            try {
+                $result = @mb_convert_encoding($text, 'UTF-8', $cs);
+            } catch (\Exception $e) {}
         }
+        
+        if ($result === false || $result === '') {
+            // Fallback: auto detect encoding with common international charsets
+            $detected = mb_detect_encoding($text, ['UTF-8', 'ISO-8859-1', 'Windows-1252', 'ASCII', 'UTF-16', 'Shift_JIS', 'EUC-KR', 'Big5', 'GBK', 'KOI8-R'], true);
+            if ($detected) {
+                $result = @mb_convert_encoding($text, 'UTF-8', $detected);
+            }
+        }
+
         $utf8Str = $result ?: $text;
         return mb_convert_encoding($utf8Str, 'UTF-8', 'UTF-8');
     }
@@ -67,7 +80,7 @@ class MimeParser
         $s = preg_replace('/(\?=)\s+(=\?)/', '$1$2', $s);
 
         $out = preg_replace_callback('/=\?([^?]+)\?([BQbq])\?([^?]*)\?=/', function ($m) {
-            $cs   = $m[1];
+            $cs   = explode('*', $m[1])[0]; // Strip language tags
             $enc  = strtoupper($m[2]);
             $data = $m[3];
             if ($enc === 'B') {
@@ -81,7 +94,7 @@ class MimeParser
         if ($out === $s) {
             // No encoded words — detect charset
             if (!mb_check_encoding($s, 'UTF-8')) {
-                $enc = mb_detect_encoding($s, ['UTF-8','ISO-8859-1','Windows-1252','KOI8-R'], true);
+                $enc = mb_detect_encoding($s, ['UTF-8', 'ISO-8859-1', 'Windows-1252', 'KOI8-R', 'GBK', 'Big5', 'Shift_JIS', 'EUC-KR'], true);
                 if ($enc) $s = mb_convert_encoding($s, 'UTF-8', $enc);
             }
             return mb_convert_encoding($s, 'UTF-8', 'UTF-8');

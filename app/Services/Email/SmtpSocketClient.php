@@ -28,7 +28,9 @@ class SmtpSocketClient extends SocketClient
         string $subject,
         string $bodyHtml,
         string $bodyText,
-        array $attachments = []
+        array $attachments = [],
+        ?string $inReplyTo = null,
+        ?string $references = null
     ): bool {
         if (!$this->connect()) {
             return false;
@@ -115,7 +117,7 @@ class SmtpSocketClient extends SocketClient
             }
 
             // 8. Build and Send MIME Payload
-            $mimeMessage = $this->buildMimePayload($fromAddress, $fromName, $to, $cc, $subject, $bodyHtml, $bodyText, $attachments);
+            $mimeMessage = $this->buildMimePayload($fromAddress, $fromName, $to, $cc, $subject, $bodyHtml, $bodyText, $attachments, $inReplyTo, $references);
             $this->sendRawPayload($mimeMessage);
             
             // End of DATA period marker
@@ -135,7 +137,7 @@ class SmtpSocketClient extends SocketClient
             $this->disconnect();
             return false;
         }
-    }
+     }
 
     /**
      * Build the raw MIME multipart message.
@@ -148,10 +150,34 @@ class SmtpSocketClient extends SocketClient
         string $subject,
         string $bodyHtml,
         string $bodyText,
-        array $attachments
+        array $attachments,
+        ?string $inReplyTo = null,
+        ?string $references = null
     ): string {
         $boundaryMixed = '----=_Part_Mixed_' . md5(time() . uniqid());
+        $boundaryRelated = '----=_Part_Related_' . md5(time() . uniqid());
         $boundaryAlternative = '----=_Part_Alternative_' . md5(time() . uniqid());
+
+        // Parse inline images from $bodyHtml
+        $inlineImages = [];
+        $updatedHtml = $bodyHtml;
+        if (preg_match_all('/src=["\']data:(image\/[a-z0-9\-\+]+);base64,([^"\']+)["\']/i', $bodyHtml, $matches, PREG_SET_ORDER)) {
+            foreach ($matches as $match) {
+                $mimeType = $match[1];
+                $base64Data = $match[2];
+                $cid = 'img_' . md5($base64Data) . '@mserp.local';
+                
+                // Replace the src value with cid reference
+                $updatedHtml = str_replace('data:' . $mimeType . ';base64,' . $base64Data, 'cid:' . $cid, $updatedHtml);
+                
+                // Track inline image
+                $inlineImages[] = [
+                    'mime_type' => $mimeType,
+                    'content' => $base64Data,
+                    'cid' => $cid
+                ];
+            }
+        }
 
         // Format Recipients
         $toHeader = [];
@@ -173,16 +199,45 @@ class SmtpSocketClient extends SocketClient
         $headers[] = "Subject: =?UTF-8?B?" . base64_encode($subject) . "?=";
         $headers[] = "Date: " . date('r');
         $headers[] = "Message-ID: <" . time() . uniqid() . "@" . request()->getHost() . ">";
-        $headers[] = "Content-Type: multipart/mixed; boundary=\"{$boundaryMixed}\"";
-        $headers[] = ""; // Empty line separation headers from body
+        
+        if (!empty($inReplyTo)) {
+            $formattedInReplyTo = (str_starts_with($inReplyTo, '<') && str_ends_with($inReplyTo, '>')) ? $inReplyTo : "<{$inReplyTo}>";
+            $headers[] = "In-Reply-To: {$formattedInReplyTo}";
+        }
+        if (!empty($references)) {
+            $headers[] = "References: {$references}";
+        }
+
+        $hasAttachments = !empty($attachments);
+        $hasInlines = !empty($inlineImages);
+
+        if ($hasAttachments) {
+            $headers[] = "Content-Type: multipart/mixed; boundary=\"{$boundaryMixed}\"";
+        } elseif ($hasInlines) {
+            $headers[] = "Content-Type: multipart/related; boundary=\"{$boundaryRelated}\"";
+        } else {
+            $headers[] = "Content-Type: multipart/alternative; boundary=\"{$boundaryAlternative}\"";
+        }
+        $headers[] = ""; // Header-body separator
 
         $body = [];
-        // Mixed Boundary Start
-        $body[] = "--{$boundaryMixed}";
-        $body[] = "Content-Type: multipart/alternative; boundary=\"{$boundaryAlternative}\"";
-        $body[] = "";
 
-        // Plain Text Part
+        if ($hasAttachments) {
+            $body[] = "--{$boundaryMixed}";
+            if ($hasInlines) {
+                $body[] = "Content-Type: multipart/related; boundary=\"{$boundaryRelated}\"";
+                $body[] = "";
+                $body[] = "--{$boundaryRelated}";
+            }
+            $body[] = "Content-Type: multipart/alternative; boundary=\"{$boundaryAlternative}\"";
+            $body[] = "";
+        } elseif ($hasInlines) {
+            $body[] = "--{$boundaryRelated}";
+            $body[] = "Content-Type: multipart/alternative; boundary=\"{$boundaryAlternative}\"";
+            $body[] = "";
+        }
+
+        // Alternative part (plain text vs html)
         $body[] = "--{$boundaryAlternative}";
         $body[] = "Content-Type: text/plain; charset=UTF-8";
         $body[] = "Content-Transfer-Encoding: 7bit";
@@ -190,40 +245,53 @@ class SmtpSocketClient extends SocketClient
         $body[] = $bodyText;
         $body[] = "";
 
-        // HTML Part
         $body[] = "--{$boundaryAlternative}";
         $body[] = "Content-Type: text/html; charset=UTF-8";
         $body[] = "Content-Transfer-Encoding: 8bit";
         $body[] = "";
-        $body[] = $bodyHtml;
+        $body[] = $updatedHtml;
         $body[] = "";
-        
-        // End alternative part
         $body[] = "--{$boundaryAlternative}--";
         $body[] = "";
 
-        // Attachments
-        foreach ($attachments as $att) {
-            $path = $att['path'] ?? null;
-            $name = $att['name'] ?? 'attachment';
-            $mime = $att['mime_type'] ?? 'application/octet-stream';
-            
-            if ($path && file_exists($path)) {
-                $content = file_get_contents($path);
-                $encoded = chunk_split(base64_encode($content));
-
-                $body[] = "--{$boundaryMixed}";
-                $body[] = "Content-Type: {$mime}; name=\"{$name}\"";
-                $body[] = "Content-Disposition: attachment; filename=\"{$name}\"";
+        // Inline images
+        if ($hasInlines) {
+            foreach ($inlineImages as $img) {
+                $body[] = "--{$boundaryRelated}";
+                $body[] = "Content-Type: {$img['mime_type']}";
                 $body[] = "Content-Transfer-Encoding: base64";
+                $body[] = "Content-ID: <{$img['cid']}>";
+                $body[] = "Content-Disposition: inline; filename=\"{$img['cid']}\"";
                 $body[] = "";
-                $body[] = $encoded;
+                $body[] = chunk_split($img['content']);
                 $body[] = "";
             }
+            $body[] = "--{$boundaryRelated}--";
+            $body[] = "";
         }
 
-        // End mixed part
-        $body[] = "--{$boundaryMixed}--";
+        // Attachments
+        if ($hasAttachments) {
+            foreach ($attachments as $att) {
+                $path = $att['path'] ?? null;
+                $name = $att['name'] ?? 'attachment';
+                $mime = $att['mime_type'] ?? 'application/octet-stream';
+                
+                if ($path && file_exists($path)) {
+                    $content = file_get_contents($path);
+                    $encoded = chunk_split(base64_encode($content));
+
+                    $body[] = "--{$boundaryMixed}";
+                    $body[] = "Content-Type: {$mime}; name=\"{$name}\"";
+                    $body[] = "Content-Disposition: attachment; filename=\"{$name}\"";
+                    $body[] = "Content-Transfer-Encoding: base64";
+                    $body[] = "";
+                    $body[] = $encoded;
+                    $body[] = "";
+                }
+            }
+            $body[] = "--{$boundaryMixed}--";
+        }
 
         return implode("\r\n", $headers) . "\r\n" . implode("\r\n", $body);
     }

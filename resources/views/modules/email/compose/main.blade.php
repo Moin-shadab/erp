@@ -69,6 +69,22 @@
     background-color: #f1f5f9;
     color: #0f172a;
 }
+.ql-container.ql-snow {
+    border-color: #dee2e6 !important;
+    border-bottom-left-radius: 6px !important;
+    border-bottom-right-radius: 6px !important;
+    font-family: var(--erp-font-family) !important;
+    font-size: 0.85rem !important;
+}
+.ql-toolbar.ql-snow {
+    border-color: #dee2e6 !important;
+    border-top-left-radius: 6px !important;
+    border-top-right-radius: 6px !important;
+    background-color: #f8fafc !important;
+}
+.ql-editor {
+    min-height: 200px !important;
+}
 </style>
 <div class="container-fluid p-0">
     <div class="row mb-4 align-items-center">
@@ -92,6 +108,7 @@
                     <form id="email-compose-form">
                         <input type="hidden" name="draft_id" id="draft-id">
                         <input type="hidden" name="thread_id" id="thread-id" value="{{ $replyMail ? $replyMail->thread_id : '' }}">
+                        <input type="hidden" name="in_reply_to" id="in-reply-to" value="{{ $replyMail ? $replyMail->message_id : '' }}">
 
                         <!-- To -->
                         <div class="row mb-3 align-items-center">
@@ -120,27 +137,18 @@
                             </div>
                         </div>
 
-                        <!-- Rich Text Editor Toolbar -->
-                        <div class="border rounded-t-3 bg-light p-2 d-flex gap-1 align-items-center" style="border-bottom: 0;">
-                            <button type="button" class="btn btn-xs btn-white border py-1 px-2 rounded" onclick="execCmd('bold')" title="Bold"><i class="bi bi-type-bold"></i></button>
-                            <button type="button" class="btn btn-xs btn-white border py-1 px-2 rounded" onclick="execCmd('italic')" title="Italic"><i class="bi bi-type-italic"></i></button>
-                            <button type="button" class="btn btn-xs btn-white border py-1 px-2 rounded" onclick="execCmd('underline')" title="Underline"><i class="bi bi-type-underline"></i></button>
-                            <button type="button" class="btn btn-xs btn-white border py-1 px-2 rounded" onclick="execCmd('insertUnorderedList')" title="Bullet List"><i class="bi bi-list-task"></i></button>
-                            <button type="button" class="btn btn-xs btn-white border py-1 px-2 rounded" onclick="execCmd('insertOrderedList')" title="Number List"><i class="bi bi-list-ol"></i></button>
-                            <div class="vr mx-2"></div>
-                            <button type="button" class="btn btn-xs btn-white border py-1 px-2 rounded" onclick="insertLink()" title="Link"><i class="bi bi-link-45deg"></i></button>
-                        </div>
-
-                        <!-- Rich Text Editor Area -->
-                        <div contenteditable="true" id="compose-body" class="form-control border rounded-b-3 p-3 mb-3" style="min-height: 280px; font-size: 0.85rem; outline:none;">
-                            @if($replyMail)
-                                <br><br>
-                                <hr>
-                                <small class="text-muted">On {{ date('M d, Y', strtotime($replyMail->date_sent)) }}, {{ $replyMail->from_name }} wrote:</small>
-                                <blockquote class="border-start ps-3 text-muted" style="border-color: #cbd5e1 !important;">
-                                    {!! $replyMail->body_html ?: nl2br($replyMail->body_text) !!}
-                                </blockquote>
-                            @endif
+                        <!-- Rich Text Editor Area (Quill WYSIWYG) -->
+                        <div id="compose-editor-container" class="mb-3 bg-white" style="height: 300px; display: flex; flex-direction: column;">
+                            <div id="compose-editor" style="flex-grow: 1; font-family: var(--erp-font-family); font-size: 0.85rem;">
+                                @if($replyMail)
+                                    <br><br>
+                                    <hr>
+                                    <small class="text-muted">On {{ date('M d, Y', strtotime($replyMail->date_sent)) }}, {{ $replyMail->from_name }} wrote:</small>
+                                    <blockquote class="border-start ps-3 text-muted" style="border-color: #cbd5e1 !important;">
+                                        {!! $replyMail->body_html ?: nl2br($replyMail->body_text) !!}
+                                    </blockquote>
+                                @endif
+                            </div>
                         </div>
 
                         <!-- Drag and Drop Attachment zone -->
